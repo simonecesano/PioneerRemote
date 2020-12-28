@@ -29,11 +29,45 @@ get '/' => sub {
     $c->render(template => 'app');
 };
 
-post '/command' => sub {
+any '/input/*input' => { input => undef } => sub {
     my $c = shift;
 
-    $c->log->info($c->req->json->{command});
+    $c->app->log->info('here');
 
+    my $input = $c->stash('input') || $c->param('input') || eval { $c->req->json->{input} };
+
+    $c->app->log->info($input);
+
+    $c->render_later;
+
+    my $fix = sub {
+	my $res = shift;
+	return join '', reverse unpack 'a2a2', $res;
+    };
+
+    $c->pioneer->cmd_p('?F')
+	->then(sub {
+		   $c->app->log->info(sprintf 'input %s response %s fixed response %s', $input, $_[0][0], $fix->($_[0][0]));
+		   if ($input && $input ne $fix->($_[0][0])) {
+    		       return $c->pioneer->cmd_p($input)
+		   } else {
+		       return Mojo::Promise->resolve($_[0]);
+		   }
+	       })
+	->then(sub {
+		   $c->render(json => $_[0] );
+	       })
+	->catch(sub {
+		    $c->log->info( "error " . $_[0]);
+		    $c->res->code(500);
+		    $c->render(json => { error => shift() });
+		});
+
+
+};
+
+post '/command' => sub {
+    my $c = shift;
     $c->render_later;
 
     my $cmd = 
@@ -41,9 +75,10 @@ post '/command' => sub {
 	sprintf '%05d%s', $c->req->json->{item}, $c->req->json->{command} :
 	$c->req->json->{command};
 
+    $c->app->log->info($cmd);
+
     $c->pioneer->cmd_p($cmd)
 	->then(sub {
-		   $c->log->info(dumper \@_);
 		   $c->render(json => $_[0] );
 	       })
 	->catch(sub {
@@ -81,6 +116,20 @@ get '/screen' => sub {
     my $v = $c->chi('Pioneer')->get('screen');
     return $c->render(json => $v ) if $v;
 
+    # return $c->render(json => [
+    # 			"GBP08",
+    # 			"GCP0100010\"\"",
+    # 			"GDP000010000800015",
+    # 			"GEP01102\"Antenne Bayern Live\"",
+    # 			"GEP02002\"Radio Popolare 107.6 FM Live\"",
+    # 			"GEP03002\"Radio 2 Rai Live\"",
+    # 			"GEP04002\"Bayern 1 Live\"",
+    # 			"GEP05002\"Bayern 2 Live\"",
+    # 			"GEP06002\"Bayern 3 Live\"",
+    # 			"GEP07002\"BR-Klassik Live\"",
+    # 			"GEP08002\"Deutschlandradio Kultur Live\""
+    # 		       ]);
+    
     $c->render_later;
 
     $c->pioneer->get_screen_p
