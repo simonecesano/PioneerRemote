@@ -1,0 +1,74 @@
+body {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    grid-auto-rows: auto;
+    background-color: Gainsboro;
+}
+
+@media screen and (min-width: 769px) {
+    body {
+	margin-left: 40%;
+	margin-right: 40%;
+    }
+    div {
+	height: 5.5vw;
+	line-height: 5.5vw;
+    }    
+}
+
+
+
+@media screen and (max-width: 769px) {
+    div {
+	height: 16vw;
+	line-height: 16vw;
+    }
+}
+
+div {
+    border: thin solid grey;
+    text-align: center;
+    border-radius: 6px;
+    color: white;
+    background-color: RoyalBlue;
+    font-family: Courier;
+    font-size: 16pt;
+    font-weight: bold;
+}
+
+div.double {
+    height: 33vw;
+    line-height: 33vw;
+}
+
+div.inner {
+    width:30%;
+    border: none;
+    background-color: transparent;
+}
+
+.bar {
+  grid-column: 1 / 4;
+}
+
+.button {
+    grid-width: 1fr;
+}
+
+.symbol {
+    font-size: 32pt;
+}
+
+.spacer {
+    border: none;
+    background-color: transparent;
+}
+
+.rotateup {
+    transform: rotate(-90deg);
+}
+
+.rotatedown {
+    transform: rotate(90deg);
+}
