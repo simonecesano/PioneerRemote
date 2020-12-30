@@ -1,7 +1,10 @@
 #!/usr/bin/env perl
 use lib "$FindBin::Bin/lib";
 use Mojolicious::Lite;
-use Pioneer;
+# use Pioneer;
+
+use Pioneer::Socket;;
+
 use Mojo::Util qw/dumper/;
 use FindBin;
 
@@ -14,15 +17,55 @@ plugin 'CHI' => {
 			    }
 		};
 
+my $clients;
+my $socket;
+
 app->types->type(vue => 'text/plain');
 
-app->helper(cache => sub { state $cache = {
-
-					  } });
-
 app->helper(pioneer => sub {
-		state $p = Pioneer->new;
+		# state $p = Pioneer->new;
+		state $p = Pioneer::Socket->new({ host => '192.168.1.204', port => '23', app => app });
 	    });
+
+app->helper(broadcast_screen => sub {
+		my $c = shift;
+
+		$c->app->log->info(!(keys %$clients) ?
+				   'none' : 
+				   (join ', ', map { s/.+?HASH//r } keys %$clients));
+
+		my $res;
+
+		$c->pioneer->get_screen_p
+		    ->then(sub {
+			       my $v = shift;
+			       # $c->log->info($v);
+			       for (keys %$clients) { $clients->{$_}->send({ json => { lines => $v } }) }
+			       $res->{lines} = $v;
+			       return $c->pioneer->source_p()
+			   })
+		    ->then(sub {
+			       my $v = shift;
+			       # $c->log->info($v);
+			       $res->{source} = $v;
+			       for (keys %$clients) { $clients->{$_}->send({ json => { source => $v->[0] } }) }
+			       return $res
+			   })
+		    ->then(sub {
+			       # $c->log->info(dumper $res);
+			   })
+		    ->catch(sub {
+				$c->log->info( "error " . $_[0]);
+				$c->res->code(500);
+				$c->render(json => { error => shift() });
+			    });
+	    });
+
+Mojo::IOLoop->singleton->recurring(3 => sub {
+				       app->log->info('here');
+				       app->broadcast_screen();
+				   });
+
 
 get '/' => sub {
     my $c = shift;
@@ -45,15 +88,7 @@ any '/input/*input' => { input => undef } => sub {
 	return join '', reverse unpack 'a2a2', $res;
     };
 
-    $c->pioneer->cmd_p('?F')
-	->then(sub {
-		   $c->app->log->info(sprintf 'input %s response %s fixed response %s', $input, $_[0][0], $fix->($_[0][0]));
-		   if ($input && $input ne $fix->($_[0][0])) {
-    		       return $c->pioneer->cmd_p($input)
-		   } else {
-		       return Mojo::Promise->resolve($_[0]);
-		   }
-	       })
+    $c->pioneer->source_p($input)
 	->then(sub {
 		   $c->render(json => $_[0] );
 	       })
@@ -62,8 +97,6 @@ any '/input/*input' => { input => undef } => sub {
 		    $c->res->code(500);
 		    $c->render(json => { error => shift() });
 		});
-
-
 };
 
 post '/command' => sub {
@@ -77,9 +110,10 @@ post '/command' => sub {
 
     $c->app->log->info($cmd);
 
-    $c->pioneer->cmd_p($cmd)
+    $c->pioneer->cmd_p($cmd, 1)
 	->then(sub {
 		   $c->render(json => $_[0] );
+		   $c->app->broadcast_screen();
 	       })
 	->catch(sub {
 		    $c->log->info( "error " . $_[0]);
@@ -145,6 +179,34 @@ get '/screen' => sub {
 		    $c->render(json => { error => shift() });
 		});
 };
+use Time::Piece;
+
+
+websocket '/socket' => sub {
+    my $c = shift;
+    $c->app->log->debug(sprintf 'Client connected: %s', $c->tx);
+
+    my $id = (sprintf "%s", $c->tx) =~ s/.+?HASH\((.+?)\)/$1/r;
+
+    $c->app->log->info($id);
+    $clients->{$id} = $c->tx;
+
+    $c->tx->send({ json => { id => $id =~ s/.+?HASH\((.+?)\)/$1/r } });
+
+    $c->on(message => sub {
+	       my ($c, $msg) = @_;
+	       $c->app->log->info($msg);
+	       $c->app->broadcast_screen();
+	   });
+
+    $c->on(finish => sub {
+		  $c->app->log->debug('Client disconnected');
+		  delete $clients->{$id};
+	      });
+
+};
+
+
 
 app->start;
 
