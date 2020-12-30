@@ -10,10 +10,18 @@
     background-color: rgba(220, 0, 0, 1);
 
     grid-column: auto / span 2;
-    height: 18vw;
+    height: 5em;
     border-radius: 6px;
 
 }
+
+@media screen and (min-width: 769px) {
+    body {
+	margin-left:  30%;
+	margin-right: 30%;
+    }
+}
+
 
 .styled:hover {
     background-color: rgba(255, 0, 0, 1);
@@ -24,8 +32,6 @@
                 inset 2px 2px 3px rgba(0, 0, 0, .6);
 }
 
-div {
-}
 #items li { list-style-type: none; }
 
 #screen {
@@ -91,7 +97,7 @@ button
       <div class="icon" v-else>&nbsp;</div>
     </div>
     <div class="block">
-      <button class="favorite styled" @click="sendCommand('31PB')"
+      <button class="favorite styled" @click="menuUp"
 	      type="button">
 	<img style="scale:150%" src="./icons/listing.svg">
       </button>
@@ -107,7 +113,7 @@ button
     <div class="block">
       <table>
 	<tbody>
-	  <tr><td>screen</td><td>{{ header.screen }}</td></tr>
+	  <tr><td>source</td><td>{{ source }}</td></tr>
 	  <tr><td>hierarchical</td><td>{{ header.hierarchical }}</td></tr>
 	  <tr><td>top menu</td><td>{{ header.top_menu }}</td></tr>
 	  <tr><td>return key</td><td>{{ header.return_key }}</td></tr>
@@ -174,6 +180,8 @@ module.exports = {
 	    hierarchical: undefined,
 	    enter: undefined,
 	    header: {},
+	    socket: undefined,
+	    source: undefined,
 	}
     },
     mounted: function(){
@@ -182,9 +190,68 @@ module.exports = {
 	c.queue = new Queue(1200, function(d){
 	    c.lines = d;
 	})
+	// setInterval(function() {
+	//     c.queue.enqueue({ url: '/screen' })
+	// }, 2000);
+
+	console.log(location.host);
+
+	
+	var onerror = function(e){ console.log(`connection error: ${e.message}`) }
+	var onopen = function () {
+	    this.send('hello')
+	};
+	var onmessage = function (msg) {
+	    var data = JSON.parse(msg.data);
+	    if (data.lines) {
+		console.log(JSON.stringify(data.lines));
+		c.lines = data.lines;
+	    } else if (data.source) {
+		c.source = data.source;
+	    } else if (data.id) {
+		console.log(data.id);
+	    } else {
+		console.log(data);
+	    }
+	};
+
+	var ws = new WebSocket('ws://' + location.host + '/socket');
+	ws.onopen    = onopen;
+	ws.onerror   = onerror;
+	ws.onmessage = onmessage;
+	
+	// var ws = new WebSocket('ws://' + location.host + '/socket');
+
 	setInterval(function() {
-	    c.queue.enqueue({ url: '/screen' })
+	    if (ws.readyState != 1){
+		console.log('opening new socket');
+		ws = new WebSocket('ws://' + location.host + '/socket');
+		ws.onopen    = onopen;
+		ws.onerror   = onerror;
+		ws.onmessage = onmessage;
+
+		ws.send('hello');
+
+		console.log(ws);
+	    }
 	}, 2000);
+
+	// ws.onerror = function(e){
+	//     console.log(`connection error: ${e.message}`);
+	// }
+
+	// ws.onopen = function () {
+	//     this.send('hello');
+	// };
+	
+	// ws.onmessage = function (msg) {
+	//     var data = JSON.parse(msg.data);
+	//     if (data.lines) {
+	// 	c.lines = data.lines;
+	//     } else {
+	// 	c.source = data.source;
+	//     }
+	// };
     },
     watch: {
 	lines: function(new_lines, old_lines){
@@ -193,7 +260,6 @@ module.exports = {
     },
     computed: {
 	screen: function(){
-	    console.log(this.lines);
 	    return this.lines
 		.filter(l => {
 		    return l.match(/GEP.+?\".*\"/)
@@ -202,6 +268,7 @@ module.exports = {
 		.map(l => l.replace(/.+?\"/, '"'))
 		.map(l => l.replace(/^\"|\"$/g, ''))
 		.map(l => l)
+		.slice(0, 8)
 	}
     },
     methods: {
@@ -278,6 +345,13 @@ module.exports = {
 		c.queue.enqueue({ method: 'post', url: '/command', params: cmd, immediate: true });
 	    } else if (cmd) {
 		c.queue.enqueue({ method: 'post', url: '/command', params: { command: cmd }, immediate: true });
+	    }
+	},
+	menuUp: function(){
+	    var c = this;
+	    if (c.source == "FN13") {
+		console.log('ok')
+		c.sendCommand('31PB')
 	    }
 	},
 	moveTo: function(direction){
